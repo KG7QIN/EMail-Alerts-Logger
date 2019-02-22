@@ -18,9 +18,7 @@
 #include "session.h"
 #include "parser.h"
 
-#define PORT "3490" // the port client will be connecting to 
-
-#define BUFFER_SIZE 1024 // max number of bytes we can get at once 
+#include "client-config.h"
 
 #define RECV_RESPONSE(sockfd, buffer) numbytes = recv(sockfd, buffer, BUFFER_SIZE - 1, 0); \
 		if (numbytes == 0) { \

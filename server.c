@@ -1,6 +1,5 @@
 #include "listener.h"
-
-#define DEFAULT_PORT "3490"
+#include "config.h"
 
 int main(int argc, char** argv)
 {

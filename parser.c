@@ -10,7 +10,8 @@
 
 #include "parser.h"
 
-#define BUFFER_SIZE 1024
+#include "config.h"
+
 
 static int command_lengths[] = { 4, 10, 8, 4, 5, 4 };
 static char* command_names[] = {

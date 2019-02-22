@@ -4,22 +4,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include <unistd.h>     // for close();
 #include <sys/socket.h>
 #include <sys/epoll.h>
 #include <pthread.h>
+#include <syslog.h>
 
 #include "list.h"
 #include "parser.h"
 #include "session.h"
 
+#include "config.h"
+
 #define REPLY_TO_CLIENT(sock, reply) send(sock, (void*) server_replies[reply], strlen(server_replies[reply]), 0) 
-#define BUFFER_SIZE 1024
 
 static char* server_replies[] = {
 	"250 Ok\n",
-	"220 SMTP tsmtp\n",
+	"220 SMTP Standing by to receive\n",
 	"501 Syntax error\n",
 	"354 End data with <CR><LF>.<CR><LF>\n",
 	"221 Bye\n",
@@ -41,6 +44,22 @@ void session_submit(struct session_data * session) {
 	printf("session %d: handing off message to sender\n", session->sockfd);
 	pthread_t sender;
 	pthread_create(&sender, NULL, sender_worker, session->message);
+}
+
+void* p_syslog(char *msg, ...)
+{
+	char buffer[1024];
+	va_list ap;
+
+	va_start (ap, msg);
+	vsnprintf(buffer, sizeof(buffer), msg, ap);
+	va_end(ap);
+
+	openlog(SYSLOG_NAME, LOG_CONS | LOG_PID | LOG_NDELAY, LOG_DAEMON);
+	syslog(LOG_NOTICE, "STATUS: %s", buffer);
+	closelog();
+	
+	return NULL;
 }
 
 void* session_worker(void* data) {
@@ -72,6 +91,7 @@ void* session_worker(void* data) {
 		// we wait for some messages
 		int nfds = epoll_wait(epoll_set, caught_events, 1, timeout);
 		if (nfds == 0) {
+			p_syslog("session %d: timeout", sockfd);
 			// timeout
 			close(sockfd);
 			printf("session %d: timeout, work is over\n", sockfd);
@@ -85,12 +105,14 @@ void* session_worker(void* data) {
 
 			// connection closed
 			if (received_bytes == 0) {
+				p_syslog("session %d: client closed connection", sockfd);
 				printf("session %d: client closed connection\n", sockfd);
 				break;
 			}
 
 			// errors
 			if (received_bytes < 0) {
+				p_syslog("session %d: recv error", sockfd);
 				printf("session %d: recv error\n", sockfd);
 				break;
 			}
@@ -149,6 +171,7 @@ void* session_worker(void* data) {
 					}
 					session->state = SESSION_GREET;
 					session->domain = strdup((char*) (req->arguments));
+					p_syslog("session %d: state changed to greeted", sockfd);
 					printf("session %d: state changed to greeted\n", sockfd);
 					break;
 				case CMD_MAIL:
@@ -158,6 +181,7 @@ void* session_worker(void* data) {
 						session->state = SESSION_MAIL;
 						session->message->mail_from = strdup((char*) (req->arguments));
 						REPLY_TO_CLIENT(sockfd, REPLY_OK);
+						p_syslog("session %d: you've got mail", sockfd);
 						printf("session %d: got mail from\n", sockfd);
 					} else {
 						REPLY_TO_CLIENT(sockfd, REPLY_OOO);
@@ -170,6 +194,7 @@ void* session_worker(void* data) {
 						session->state = SESSION_RCPT;
 						session->message->rcpt_to = strdup((char*) (req->arguments));
 						REPLY_TO_CLIENT(sockfd, REPLY_OK);
+						p_syslog("session %d: got receipient", sockfd);
 						printf("session %d: state changed to got receipients\n", sockfd);
 					} else {
 						REPLY_TO_CLIENT(sockfd, REPLY_OOO);
@@ -180,6 +205,7 @@ void* session_worker(void* data) {
 					if (session->state == SESSION_RCPT) {
 						session->state = SESSION_DATA;
 						REPLY_TO_CLIENT(sockfd, REPLY_DATA_INFO);
+						p_syslog("session %d: data received", sockfd);
 						printf("session %d: state changed to data receival\n", sockfd);
 					} else {
 						REPLY_TO_CLIENT(sockfd, REPLY_OOO);
@@ -191,9 +217,11 @@ void* session_worker(void* data) {
 					if (session->state == SESSION_DATA) {
 						session_submit(session);
 						session_reset(session);
-						session->state = SESSION_GREET;
+						session->state = SESSION_QUIT;
 						REPLY_TO_CLIENT(sockfd, REPLY_OK);
-						printf("session %d: data transaction over, state changed to greeted\n", sockfd);
+						REPLY_TO_CLIENT(sockfd, REPLY_BYE);
+						p_syslog("session %d: bye felicia", sockfd);
+						printf("session %d: data transaction over, state changed to quit\n", sockfd);
 					} else {
 						REPLY_TO_CLIENT(sockfd, REPLY_OOO);
 					}
@@ -202,12 +230,17 @@ void* session_worker(void* data) {
 					// closes session
 					session->state = SESSION_QUIT;
 					REPLY_TO_CLIENT(sockfd, REPLY_BYE);
+					p_syslog("session %d: state changed to quit", sockfd);
 					printf("session %d: state changed to quit\n", sockfd);
 					break;
 				default:
 					// send syntax error
-					REPLY_TO_CLIENT(sockfd, REPLY_SYNTAX_ERROR);
+//					REPLY_TO_CLIENT(sockfd, REPLY_SYNTAX_ERROR);
+					session->state = SESSION_QUIT;
+					REPLY_TO_CLIENT(sockfd, REPLY_BYE);
+					p_syslog("session %d: syntex error", sockfd);
 					printf("session %d: syntax error\n", sockfd);
+
 					break;
 			}
 			free(req);
@@ -215,6 +248,7 @@ void* session_worker(void* data) {
 	}
 	free(buffer);
 	free(data);
+	p_syslog("session %d: finished", sockfd);
 	printf("session %d: finished\n", sockfd);
 	close(sockfd);
 

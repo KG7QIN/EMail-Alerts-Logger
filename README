@@ -1,4 +1,11 @@
-This is a simple SMTP server, with a stub instead of actual message sending.
+Simple SMTP server based on tsmtp-c by Tomas Varneckas (https://github.com/tomasv/tsmtp-c.git)
+
+Takes emails received and logs them to syslog.
+
+After a a single successul message, the server will say bye.
+If any commands are sent out of sequence or invalid, the server will say bye.
+
+Full syslog session logging for debugging multiple session activity.
 
 Implemented commands:
 HELO
@@ -7,3 +14,10 @@ RCPT TO (limited to only one receipient)
 DATA
 <CR><LF>.<CR><LF>
 QUIT
+
+---
+
+Change log:
+0.01 - Stacy Olivas - 02/21/19
+       Added syslog functions.  Moved defitions for server to config.h and client to client-config.h
+ 
