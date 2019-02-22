@@ -19,5 +19,5 @@ QUIT
 
 Change log:
 0.01 - Stacy Olivas - 02/21/19
-       Added syslog functions.  Moved defitions for server to config.h and client to client-config.h
+       Added syslog functions.  Moved definitions for server to config.h and client to client-config.h
  
